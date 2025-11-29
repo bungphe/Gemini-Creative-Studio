@@ -1,25 +1,57 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { ModelType } from "../types";
 
-// Helper to ensure we have a key for Veo, handling the UI flow if needed.
-// This is critical for Veo operations which require a paid project key.
-const ensureApiKey = async (): Promise<string> => {
-  if (window.aistudio) {
+// --- API Key Management ---
+
+let storedApiKey = typeof localStorage !== 'undefined' ? localStorage.getItem('gemini_api_key') : null;
+
+export const setStoredApiKey = (key: string) => {
+  storedApiKey = key;
+  if (typeof localStorage !== 'undefined') {
+    if (key) {
+      localStorage.setItem('gemini_api_key', key);
+    } else {
+      localStorage.removeItem('gemini_api_key');
+    }
+  }
+};
+
+export const getStoredApiKey = (): string | null => {
+  return storedApiKey;
+};
+
+// Helper to get the effective API key
+const getApiKey = (): string | undefined => {
+  return storedApiKey || process.env.API_KEY;
+};
+
+// Helper to get a fresh client instance. 
+const getClient = async (): Promise<GoogleGenAI> => {
+  // 1. Try manual key first
+  const manualKey = getStoredApiKey();
+  if (manualKey) {
+    return new GoogleGenAI({ apiKey: manualKey });
+  }
+
+  // 2. Try AI Studio environment flow
+  if (typeof window !== 'undefined' && window.aistudio) {
     const hasKey = await window.aistudio.hasSelectedApiKey();
     if (!hasKey) {
       await window.aistudio.openSelectKey();
     }
-    // We assume the key is now in process.env.API_KEY or the environment handles it.
-    // The prompt says: "The selected API key is available via process.env.API_KEY"
+    // In AI Studio, the key is injected into process.env after selection
+    if (process.env.API_KEY) {
+      return new GoogleGenAI({ apiKey: process.env.API_KEY });
+    }
   }
-  return process.env.API_KEY as string;
-};
 
-// Helper to get a fresh client instance. 
-// Important for Veo to pick up the newly selected key if it changed.
-const getClient = async (): Promise<GoogleGenAI> => {
-  const apiKey = await ensureApiKey();
-  return new GoogleGenAI({ apiKey });
+  // 3. Fallback to process.env (e.g. if set at build time)
+  if (process.env.API_KEY) {
+    return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  }
+
+  throw new Error("API Key is missing. Please set it in Settings.");
 };
 
 // --- Video Generation (Veo) ---
@@ -41,10 +73,10 @@ export const generateVideo = async (
       // Image-to-Video
       operation = await ai.models.generateVideos({
         model,
-        prompt: prompt || "Animate this image", // Prompt is optional but recommended
+        prompt: prompt || "Animate this image", 
         image: {
           imageBytes: image,
-          mimeType: 'image/png', // Assuming PNG or standard image conversion before calling
+          mimeType: 'image/png', 
         },
         config: {
           numberOfVideos: 1,
@@ -69,8 +101,7 @@ export const generateVideo = async (
 
     // Polling loop
     while (!operation.done) {
-      // Wait 5 seconds between polls
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      await new Promise(resolve => setTimeout(resolve, 10000));
       operation = await ai.operations.getVideosOperation({ operation });
       console.log("Polling status...", operation.metadata);
     }
@@ -83,8 +114,14 @@ export const generateVideo = async (
     console.log("Video generation complete. Fetching media...");
 
     // Fetch the actual video bytes using the key
-    const apiKey = process.env.API_KEY;
-    const mediaResponse = await fetch(`${videoUri}&key=${apiKey}`);
+    // We need to append the key manually for the fetch request
+    // If we used a manual key, use that. Otherwise try env.
+    const keyForFetch = getApiKey();
+    if (!keyForFetch) {
+       throw new Error("API Key missing during fetch.");
+    }
+
+    const mediaResponse = await fetch(`${videoUri}&key=${keyForFetch}`);
     
     if (!mediaResponse.ok) {
       throw new Error(`Failed to fetch video media: ${mediaResponse.statusText}`);
@@ -95,10 +132,8 @@ export const generateVideo = async (
 
   } catch (error: any) {
     console.error("Veo Error:", error);
-    // Handle the specific "Requested entity was not found" error for keys
-    if (error.message && error.message.includes("Requested entity was not found") && window.aistudio) {
+    if (error.message && error.message.includes("Requested entity was not found") && window.aistudio && !getStoredApiKey()) {
       await window.aistudio.openSelectKey();
-      // Retry logic could go here, but for now we throw to let the UI prompt again
       throw new Error("API Key invalid or expired. Please select a project again.");
     }
     throw error;
@@ -111,7 +146,8 @@ export const analyzeImage = async (
   base64Image: string, 
   prompt: string
 ): Promise<string> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Use getClient to ensure we use the correct key source
+  const ai = await getClient();
   
   // Clean base64 if it has header
   const data = base64Image.replace(/^data:image\/\w+;base64,/, "");
@@ -123,7 +159,7 @@ export const analyzeImage = async (
         {
           inlineData: {
             data: data,
-            mimeType: 'image/png' // Generic safe assumption for this context or extract real mime
+            mimeType: 'image/png' 
           }
         },
         { text: prompt || "Describe this image in detail." }
@@ -140,9 +176,9 @@ export const sendMessage = async (
   history: { role: string; parts: { text: string }[] }[],
   message: string
 ): Promise<string> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Use getClient to ensure we use the correct key source
+  const ai = await getClient();
   
-  // Use Flash for speed in chat
   const chat = ai.chats.create({
     model: ModelType.GEMINI_FLASH,
     history: history,

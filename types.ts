@@ -1,8 +1,11 @@
-// Window augmentation for AI Studio specific features
+export interface AIStudio {
+  hasSelectedApiKey: () => Promise<boolean>;
+  openSelectKey: () => Promise<void>;
+}
+
 declare global {
-  interface AIStudio {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
+  interface Window {
+    aistudio?: AIStudio;
   }
 }
 

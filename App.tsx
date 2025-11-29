@@ -1,15 +1,21 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { 
   Video, 
   Image as ImageIcon, 
   Sparkles, 
   MessageSquare, 
-  LayoutDashboard 
+  LayoutDashboard,
+  Key,
+  X,
+  Save,
+  ExternalLink
 } from 'lucide-react';
 import VideoGenerator from './components/VideoGenerator';
 import ImageAnimator from './components/ImageAnimator';
 import ImageAnalyzer from './components/ImageAnalyzer';
 import ChatAssistant from './components/ChatAssistant';
+import { setStoredApiKey, getStoredApiKey } from './services/geminiService';
 
 // Navigation items
 enum View {
@@ -22,6 +28,34 @@ enum View {
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.VEO_TEXT);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Settings state
+  const [tempApiKey, setTempApiKey] = useState('');
+
+  useEffect(() => {
+    // Load existing key into state when app loads
+    const existingKey = getStoredApiKey();
+    if (existingKey) setTempApiKey(existingKey);
+  }, []);
+
+  const handleOpenSettings = () => {
+    const existingKey = getStoredApiKey();
+    setTempApiKey(existingKey || '');
+    setIsSettingsOpen(true);
+  };
+
+  const handleSaveSettings = () => {
+    setStoredApiKey(tempApiKey.trim());
+    setIsSettingsOpen(false);
+  };
+
+  const handleSelectKeyFromStudio = async () => {
+    if (window.aistudio) {
+      await window.aistudio.openSelectKey();
+      setIsSettingsOpen(false);
+    }
+  };
 
   const renderContent = () => {
     switch (currentView) {
@@ -85,7 +119,15 @@ const App: React.FC = () => {
           />
         </nav>
 
-        <div className="p-4 border-t border-gray-800">
+        <div className="p-4 border-t border-gray-800 space-y-4">
+          <button 
+            onClick={handleOpenSettings}
+            className="w-full flex items-center gap-3 px-3 py-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors text-sm"
+          >
+            <Key size={16} />
+            <span>API Settings</span>
+          </button>
+          
           <div className="text-xs text-gray-500 text-center">
             Powered by Gemini 2.5 & 3.0
           </div>
@@ -109,6 +151,13 @@ const App: React.FC = () => {
             {currentView === View.ANALYSIS && "Visual Analysis"}
             {currentView === View.CHAT && "AI Assistant"}
           </h2>
+          {/* Mobile Key Button */}
+          <button 
+            onClick={handleOpenSettings}
+            className="md:hidden p-2 text-gray-400 hover:text-white"
+          >
+            <Key size={20} />
+          </button>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 scroll-smooth">
@@ -117,6 +166,74 @@ const App: React.FC = () => {
           </div>
         </div>
       </main>
+
+      {/* Settings Modal */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
+            <button 
+              onClick={() => setIsSettingsOpen(false)}
+              className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
+            >
+              <X size={20} />
+            </button>
+            
+            <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+              <Key className="text-blue-500" />
+              API Settings
+            </h3>
+            
+            <div className="space-y-6">
+              {window.aistudio && (
+                <div className="p-4 bg-gray-800/50 rounded-xl border border-gray-700">
+                  <h4 className="text-sm font-medium text-gray-300 mb-2">Google AI Studio Environment</h4>
+                  <p className="text-xs text-gray-500 mb-4">Detected AI Studio environment. You can select a project key directly.</p>
+                  <button 
+                    onClick={handleSelectKeyFromStudio}
+                    className="w-full py-2 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 border border-blue-600/50 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Select Google Project Key
+                  </button>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Manual API Key
+                </label>
+                <input 
+                  type="password" 
+                  value={tempApiKey}
+                  onChange={(e) => setTempApiKey(e.target.value)}
+                  placeholder="AIzaSy..."
+                  className="w-full bg-gray-950 border border-gray-800 rounded-xl p-3 text-gray-100 placeholder-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                />
+                <div className="flex justify-between mt-2">
+                  <p className="text-xs text-gray-500">
+                    Key is stored locally in your browser.
+                  </p>
+                  <a 
+                    href="https://aistudio.google.com/app/apikey" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                  >
+                    Get API Key <ExternalLink size={10} />
+                  </a>
+                </div>
+              </div>
+
+              <button
+                onClick={handleSaveSettings}
+                className="w-full py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white rounded-xl font-medium shadow-lg shadow-blue-900/20 flex items-center justify-center gap-2 transition-all"
+              >
+                <Save size={18} />
+                Save Settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
